@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Model cache (HuggingFace downloads hàng GB)
+~/.cache/huggingface/
+models/
+*.bin
+*.safetensors
+*.gguf
+
+# FAISS index (rebuild bằng ingest.py)
+vectorstore/
+
+# Reports sinh ra khi chạy
+reports/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets / credentials
+.env
+*.key
+secrets.json

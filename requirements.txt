@@ -1,0 +1,42 @@
+# ── Core ML ───────────────────────────────────────────────
+torch>=2.0.0
+transformers>=4.40.0
+accelerate>=0.30.0
+bitsandbytes>=0.43.0       # load_in_8bit khi VRAM thấp
+sentencepiece>=0.2.0       # tokenizer Qwen
+
+# ── Embedding & Vector DB ─────────────────────────────────
+sentence-transformers>=2.7.0
+faiss-cpu>=1.7.4           # thay faiss-gpu nếu có CUDA
+
+# ── LangChain ─────────────────────────────────────────────
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-huggingface>=0.0.3
+
+# ── Document loaders ──────────────────────────────────────
+pypdf>=4.0.0               # đọc PDF
+
+# ── UI ────────────────────────────────────────────────────
+gradio>=4.36.0
+
+# ── Voice: STT (Speech-to-Text) ───────────────────────────
+SpeechRecognition>=3.10.0  # Google Web Speech API (miễn phí)
+pydub>=0.25.1              # convert audio format (WAV/MP3/WEBM...)
+# PyAudio>=0.2.14          # cần nếu dùng microphone local (không cần trên Colab)
+
+# Google Cloud STT (chỉ cần nếu có API credentials):
+# google-cloud-speech>=2.26.0
+
+# ── Voice: TTS (Text-to-Speech) ───────────────────────────
+gTTS>=2.5.1                # Google Translate TTS (miễn phí, không cần key)
+
+# Google Cloud TTS (chỉ cần nếu có API credentials):
+# google-cloud-texttospeech>=2.16.0
+
+# ── Utilities ─────────────────────────────────────────────
+huggingface-hub>=0.23.0
+tqdm>=4.66.0
+
+# ── Cài thêm trên Colab nếu cần Google Cloud ──────────────
+# pip install google-cloud-speech google-cloud-texttospeech
