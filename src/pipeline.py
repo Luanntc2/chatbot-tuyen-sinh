@@ -148,6 +148,46 @@ class RAGPipeline:
             "best_score": round(best_score, 4),
         }
 
+    def stream(self, question: str, top_k: int = TOP_K):
+        """
+        Generator streaming: yield ("meta", dict) rồi yield ("token", str) từng token.
+
+        Dùng cho Gradio streaming — hiện chữ ngay thay vì đợi toàn bộ câu trả lời.
+        """
+        results   = self.retriever.retrieve(question, top_k=top_k)
+        best_score = min((score for _, score in results), default=999.0)
+        in_scope  = not is_out_of_scope(results)
+
+        sources = [
+            {
+                "content": (
+                    doc.page_content[:200] + "..."
+                    if len(doc.page_content) > 200 else doc.page_content
+                ),
+                "source": os.path.basename(doc.metadata.get("source", "unknown")),
+                "score":  round(float(score), 4),
+            }
+            for doc, score in results
+        ] if in_scope else []
+
+        yield "meta", {
+            "in_scope":   in_scope,
+            "best_score": round(best_score, 4),
+            "sources":    sources,
+        }
+
+        if not in_scope:
+            print(f"  [Pipeline] Câu hỏi NGOÀI phạm vi → từ chối")
+            yield "answer", OUT_OF_SCOPE_REPLY
+            return
+
+        context = self.retriever.format_context(results)
+        prompt  = PROMPT_TEMPLATE.format(context=context, question=question)
+        print(f"  [Pipeline] Câu hỏi TRONG phạm vi → streaming...")
+
+        for token in self.generator.stream(prompt):
+            yield "token", token
+
     def __call__(self, question: str) -> str:
         """Shortcut: chỉ trả về chuỗi câu trả lời."""
         return self.answer(question)["answer"]

@@ -12,7 +12,7 @@ CHUNK_SIZE = 512
 CHUNK_OVERLAP = 64
 
 # Retrieval
-TOP_K = 5
+TOP_K = 3   # giảm từ 5 → prompt ngắn hơn, model xử lý nhanh hơn
 
 # Ngưỡng liên quan (L2 distance, normalize_embeddings=True)
 # Phạm vi: 0.0 (giống hệt) → 2.0 (hoàn toàn khác)
@@ -22,7 +22,7 @@ TOP_K = 5
 RELEVANCE_THRESHOLD = 1.0
 
 # Generation
-MAX_NEW_TOKENS = 512
+MAX_NEW_TOKENS = 192   # giảm từ 256 → phản hồi nhanh hơn ~25%
 TEMPERATURE = 0.3
 
 # Paths

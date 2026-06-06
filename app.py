@@ -12,6 +12,7 @@ Colab: thêm share=True trong demo.launch()
 import os
 import sys
 import logging
+import random
 
 import gradio as gr
 
@@ -46,34 +47,54 @@ def get_pipeline() -> RAGPipeline:
 
 def text_chat(message: str, history: list):
     if not message.strip():
-        return history
+        yield history
+        return
 
-    result = get_pipeline().answer(message)
-    answer     = result["answer"]
-    in_scope   = result.get("in_scope", True)
-    best_score = result.get("best_score", 0)
+    # Hiện tin nhắn người dùng ngay lập tức
+    new_history = list(history) + [{"role": "user", "content": message}]
+    yield new_history
 
-    if in_scope and result["sources"]:
-        # ✅ Câu hỏi trong phạm vi tài liệu
+    meta       = {}
+    partial    = ""
+    is_refusal = False
+
+    for kind, data in get_pipeline().stream(message):
+        if kind == "meta":
+            meta = data
+
+        elif kind == "answer":
+            # Câu hỏi ngoài phạm vi — trả lời tĩnh, không stream
+            partial    = data
+            is_refusal = True
+
+        elif kind == "token":
+            partial += data
+            # Hiện chữ ngay từng token (con trỏ ▌ giả lập đang gõ)
+            yield new_history + [{"role": "assistant", "content": partial + " ▌"}]
+
+    # Tạo badge nguồn tham khảo
+    best_score = meta.get("best_score", 0)
+    in_scope   = meta.get("in_scope", False)
+    sources    = meta.get("sources", [])
+
+    if in_scope and sources:
         scope_badge = (
             f"\n\n---\n"
             f"🟢 **Trong phạm vi tài liệu** *(best score: {best_score:.4f})*\n\n"
             f"**📚 Nguồn tham khảo:**\n"
         ) + "\n".join(
             f"&nbsp;&nbsp;{i}. `{s['source']}` &nbsp;*(score: {s['score']:.4f})*"
-            for i, s in enumerate(result["sources"], 1)
+            for i, s in enumerate(sources, 1)
         )
     else:
-        # 🔴 Câu hỏi nằm ngoài phạm vi tài liệu
         scope_badge = (
             f"\n\n---\n"
             f"🔴 **Ngoài phạm vi tài liệu** *(best score: {best_score:.4f} > threshold)*\n"
             f"*Câu trả lời không được tạo ra từ dữ liệu huấn luyện*"
         )
 
-    history.append({"role": "user",      "content": message})
-    history.append({"role": "assistant", "content": answer + scope_badge})
-    return history
+    # Yield cuối: bỏ con trỏ ▌, thêm badge nguồn
+    yield new_history + [{"role": "assistant", "content": partial + scope_badge}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -140,14 +161,33 @@ def voice_chat(audio_path: str, voice_name: str, speaking_rate: float):
 #  GRADIO UI
 # ═══════════════════════════════════════════════════════════════════════════════
 
-EXAMPLE_QUESTIONS = [
+QUESTION_POOL = [
     "Trường FPT tuyển sinh các cấp học nào?",
     "Học phí của trường FPT là bao nhiêu?",
     "Hồ sơ đăng ký tuyển sinh cần những gì?",
     "Trường FPT có học bổng không?",
     "Điều kiện tuyển sinh vào lớp 10 là gì?",
     "Chương trình lập trình và AI tại FPT như thế nào?",
+    "Phương thức xét tuyển vào lớp 6 như thế nào?",
+    "Chi phí bán trú mỗi học kỳ là bao nhiêu?",
+    "Chính sách hoàn trả học phí như thế nào?",
+    "Điều kiện nhận học bổng 100% là gì?",
+    "Thời hạn nộp hồ sơ tuyển sinh là khi nào?",
+    "Trường FPT có dạy Robotics và lập trình không?",
+    "Lớp 1 cần chuẩn bị hồ sơ gì để tuyển sinh?",
+    "Học phí lớp 10 tại FPT Hậu Giang là bao nhiêu?",
+    "Trường FPT có dạy võ Vovinam không?",
+    "Chương trình Tiếng Anh tại FPT School có gì đặc biệt?",
+    "Phí giữ chỗ và nhập học là bao nhiêu?",
+    "Trường FPT Hậu Giang có bao nhiêu giáo viên?",
 ]
+
+def _pick_questions():
+    return random.sample(QUESTION_POOL, 6)
+
+def rotate_example_questions():
+    qs = _pick_questions()
+    return [gr.update(value=q) for q in qs] + list(qs)
 
 VOICE_OPTIONS = list(GOOGLE_CLOUD_VOICES.keys()) + ["gTTS (miễn phí)"]
 
@@ -192,17 +232,30 @@ with gr.Blocks(
 
             clear_btn = gr.Button("🗑 Xóa hội thoại", variant="secondary", size="sm")
 
-            gr.Markdown("**💡 Câu hỏi gợi ý:**")
+            gr.Markdown("**💡 Câu hỏi gợi ý** *(tự động xoay vòng mỗi 90 giây)*:")
+
+            # State lưu nội dung hiện tại của từng button (để click đọc đúng text)
+            _init_qs = _pick_questions()
+            q_states = [gr.State(q) for q in _init_qs]
+
+            example_btns = []
             with gr.Row():
-                for q in EXAMPLE_QUESTIONS[:3]:
-                    gr.Button(q, size="sm", variant="secondary").click(
-                        fn=lambda x=q: x, outputs=msg_input
-                    )
+                for q in _init_qs[:3]:
+                    example_btns.append(gr.Button(q, size="sm", variant="secondary"))
             with gr.Row():
-                for q in EXAMPLE_QUESTIONS[3:]:
-                    gr.Button(q, size="sm", variant="secondary").click(
-                        fn=lambda x=q: x, outputs=msg_input
-                    )
+                for q in _init_qs[3:]:
+                    example_btns.append(gr.Button(q, size="sm", variant="secondary"))
+
+            # Mỗi button click điền nội dung từ state tương ứng vào textbox
+            for btn, state in zip(example_btns, q_states):
+                btn.click(fn=lambda q: q, inputs=[state], outputs=[msg_input])
+
+            # Timer xoay vòng câu hỏi mỗi 90 giây
+            q_timer = gr.Timer(value=90)
+            q_timer.tick(
+                fn=rotate_example_questions,
+                outputs=example_btns + q_states,
+            )
 
             send_btn.click(text_chat, [msg_input, chatbot_ui], chatbot_ui).then(
                 fn=lambda: "", outputs=msg_input
