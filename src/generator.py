@@ -74,6 +74,15 @@ class Generator:
         )
 
         inputs = self.tokenizer([text], return_tensors="pt")
+
+        # Truncate nếu vượt quá max context của model (TinyLlama: 2048 tokens)
+        max_ctx = getattr(self.model.config, "max_position_embeddings", 4096)
+        max_input = max_ctx - MAX_NEW_TOKENS
+        n_tokens = inputs["input_ids"].shape[1]
+        if n_tokens > max_input:
+            # Giữ phần cuối (chứa câu hỏi), bỏ phần đầu context nếu quá dài
+            inputs = {k: v[:, -max_input:] for k, v in inputs.items()}
+
         if torch.cuda.is_available():
             inputs = {k: v.cuda() for k, v in inputs.items()}
 
