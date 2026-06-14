@@ -25,21 +25,30 @@ def ask_one(pipeline: RAGPipeline, question: str, debug: bool = False):
     print(f"Câu hỏi: {question}")
     print_separator()
 
-    result = pipeline.answer(question)
+    meta = None
+    answer_parts = []
+    print("Câu trả lời:\n", end="", flush=True)
 
-    if debug:
-        print("\n[DEBUG] CONTEXT ĐƯỢC TRUY XUẤT:")
-        print_separator("·")
-        print(result["context"])
-        print_separator("·")
-        print()
+    for kind, value in pipeline.stream(question):
+        if kind == "meta":
+            meta = value
+            if debug and meta["in_scope"]:
+                # In context sau khi in xong câu trả lời
+                pass
+        elif kind == "token":
+            print(value, end="", flush=True)
+            answer_parts.append(value)
+        elif kind == "answer":
+            # Out-of-scope reply (không stream)
+            print(value, end="", flush=True)
 
-    print(f"Câu trả lời:\n{result['answer']}\n")
+    print("\n")
 
-    print("Nguồn tham khảo:")
-    for i, src in enumerate(result["sources"], 1):
-        print(f"  {i}. {src['source']} (score: {src['score']:.4f})")
-        print(f"     {src['content'][:100].strip()}...")
+    if meta and meta["sources"]:
+        print("Nguồn tham khảo:")
+        for i, src in enumerate(meta["sources"], 1):
+            print(f"  {i}. {src['source']} (score: {src['score']:.4f})")
+            print(f"     {src['content'][:100].strip()}...")
     print_separator()
 
 

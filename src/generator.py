@@ -1,5 +1,6 @@
 import os
 import sys
+import warnings
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -50,6 +51,10 @@ class Generator:
             else:
                 print("  Dùng float16")
                 load_kwargs["torch_dtype"] = torch.float16
+        elif torch.backends.mps.is_available():
+            print("  Apple Silicon GPU (MPS) → dùng float16")
+            load_kwargs["torch_dtype"] = torch.float16
+            load_kwargs["device_map"] = {"": "mps"}
         else:
             print("  Không có GPU → dùng CPU (float32, chậm hơn)")
             load_kwargs["torch_dtype"] = torch.float32
@@ -73,18 +78,23 @@ class Generator:
             add_generation_prompt=True,
         )
 
-        inputs = self.tokenizer([text], return_tensors="pt")
-
-        # Truncate nếu vượt quá max context của model (TinyLlama: 2048 tokens)
+        # Tính giới hạn token trước khi tokenize để tránh warning
         max_ctx = getattr(self.model.config, "max_position_embeddings", 4096)
         max_input = max_ctx - MAX_NEW_TOKENS
-        n_tokens = inputs["input_ids"].shape[1]
-        if n_tokens > max_input:
-            # Giữ phần cuối (chứa câu hỏi), bỏ phần đầu context nếu quá dài
+
+        # Suppress warning "Token indices sequence length is longer than..."
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            inputs = self.tokenizer([text], return_tensors="pt")
+
+        # Truncate nếu vượt giới hạn: giữ phần cuối (câu hỏi luôn ở cuối prompt)
+        if inputs["input_ids"].shape[1] > max_input:
             inputs = {k: v[:, -max_input:] for k, v in inputs.items()}
 
         if torch.cuda.is_available():
             inputs = {k: v.cuda() for k, v in inputs.items()}
+        elif torch.backends.mps.is_available():
+            inputs = {k: v.to("mps") for k, v in inputs.items()}
 
         with torch.no_grad():
             output_ids = self.model.generate(
@@ -101,3 +111,49 @@ class Generator:
         new_tokens = output_ids[0][input_len:]
         answer = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
         return answer.strip()
+
+    def stream(self, prompt: str):
+        """Yield từng token ngay khi model sinh ra (streaming)."""
+        from transformers import TextIteratorStreamer
+        from threading import Thread
+
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": prompt},
+        ]
+        text = self.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True,
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            inputs = self.tokenizer([text], return_tensors="pt")
+
+        max_ctx   = getattr(self.model.config, "max_position_embeddings", 4096)
+        max_input = max_ctx - MAX_NEW_TOKENS
+        if inputs["input_ids"].shape[1] > max_input:
+            inputs = {k: v[:, -max_input:] for k, v in inputs.items()}
+
+        if torch.cuda.is_available():
+            inputs = {k: v.cuda() for k, v in inputs.items()}
+        elif torch.backends.mps.is_available():
+            inputs = {k: v.to("mps") for k, v in inputs.items()}
+
+        streamer = TextIteratorStreamer(
+            self.tokenizer, skip_prompt=True, skip_special_tokens=True
+        )
+        gen_kwargs = dict(
+            **inputs,
+            streamer=streamer,
+            max_new_tokens=MAX_NEW_TOKENS,
+            temperature=TEMPERATURE,
+            do_sample=TEMPERATURE > 0,
+            repetition_penalty=1.1,
+            pad_token_id=self.tokenizer.eos_token_id,
+        )
+
+        thread = Thread(target=self.model.generate, kwargs=gen_kwargs, daemon=True)
+        thread.start()
+        for token in streamer:
+            yield token
+        thread.join()
