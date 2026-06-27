@@ -258,5 +258,10 @@ def convert_to_wav(input_path: str) -> str:
         wav_path = input_path.rsplit(".", 1)[0] + "_converted.wav"
         audio.export(wav_path, format="wav")
         return wav_path
-    except Exception:
+    except Exception as e:
+        # FIX: Log lỗi thay vì nuốt silently để dễ debug
+        logger.warning(
+            f"[convert_to_wav] Không thể convert '{input_path}': {e}. "
+            "Dùng file gốc, có thể gây lỗi STT nếu format không hỗ trợ."
+        )
         return input_path  # Trả về file gốc nếu convert thất bại
